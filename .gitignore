@@ -1,0 +1,11 @@
+# Output video
+*.mp4
+
+# GoPro image folders
+100GOPRO/
+101GOPRO/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

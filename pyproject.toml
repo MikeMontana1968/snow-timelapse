@@ -1,0 +1,14 @@
+[project]
+name = "snow-timelapse"
+version = "1.0.0"
+description = "Build a time-lapse MP4 from GoPro interval photos with hh:mm timestamp overlay"
+requires-python = ">=3.10"
+
+dependencies = [
+    "moviepy>=2.1",
+    "Pillow>=11.0",
+    "numpy>=2.0",
+]
+
+[project.scripts]
+build-timelapse = "build_timelapse:main"
