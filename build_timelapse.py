@@ -6,7 +6,7 @@ Interactive CLI prompts for folder selection, output filename, and FPS.
 Usage:  python build_timelapse.py
 """
 
-import os, glob, datetime, re, sys, tempfile, shutil
+import os, glob, datetime, re, sys, tempfile, shutil, gc
 import questionary
 from questionary import Choice
 from PIL import Image, ImageDraw, ImageFont
@@ -198,6 +198,9 @@ def encode_video(frame_paths, output_path, fps):
     clip = ImageSequenceClip(frame_paths, fps=fps)
     clip.write_videofile(output_path, codec="libx264", threads=4, logger="bar")
     clip.close()
+    # Force imageio/PIL finalizers to run now, while their modules are still alive.
+    del clip
+    gc.collect()
     print(f"\nDone! Output: {output_path}")
     print(f"Duration: {len(frame_paths)/fps:.1f} seconds ({len(frame_paths)} frames @ {fps}fps)")
 
