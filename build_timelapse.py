@@ -6,12 +6,11 @@ Interactive CLI prompts for folder selection, output filename, and FPS.
 Usage:  python build_timelapse.py
 """
 
-import os, glob, datetime, re, sys
+import os, glob, datetime, re, sys, tempfile, shutil
 import questionary
 from questionary import Choice
 from PIL import Image, ImageDraw, ImageFont
 from moviepy import ImageSequenceClip
-import numpy as np
 
 # ── Fixed Config ──────────────────────────────────────
 FONT_PATH      = r"C:\Windows\Fonts\consola.ttf"
@@ -158,50 +157,49 @@ def display_summary_and_confirm(base_dir, folders, files, output_path, fps):
 
 
 # ── Frame building ───────────────────────────────────
-def build_frames(files, font):
-    """Build numpy frames with timestamp overlay."""
+def build_frames(files, font, temp_dir):
+    """Write overlaid JPGs to temp_dir. Returns the list of output paths."""
     print("Building frames with timestamp overlay...")
-    frames = []
+    out_paths = []
     total = len(files)
 
     for i, filepath in enumerate(files):
         img = Image.open(filepath)
         draw = ImageDraw.Draw(img)
 
-        # Get capture time from file's last-modified timestamp
         mtime = os.path.getmtime(filepath)
         dt = datetime.datetime.fromtimestamp(mtime)
         label = dt.strftime("%H:%M")
 
-        # Measure text and position in lower-right with padding
         bbox = draw.textbbox((0, 0), label, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         padding = 30
         x = img.width - tw - padding
         y = img.height - th - padding
 
-        # Draw shadow then white text for readability
         draw.text((x + 3, y + 3), label, font=font, fill=(0, 0, 0))
         draw.text((x, y), label, font=font, fill=(255, 255, 255))
 
-        frames.append(np.array(img))
+        out_path = os.path.join(temp_dir, f"frame_{i:06d}.jpg")
+        img.save(out_path, "JPEG", quality=92)
         img.close()
+        out_paths.append(out_path)
 
         if (i + 1) % 100 == 0 or i == total - 1:
             print(f"  {i + 1}/{total}")
 
-    return frames
+    return out_paths
 
 
 # ── Video encoding ───────────────────────────────────
-def encode_video(frames, output_path, fps):
-    """Encode frames to MP4."""
+def encode_video(frame_paths, output_path, fps):
+    """Encode frames to MP4. frame_paths is a list of file paths read lazily by moviepy."""
     print(f"Encoding video at {fps}fps...")
-    clip = ImageSequenceClip(frames, fps=fps)
+    clip = ImageSequenceClip(frame_paths, fps=fps)
     clip.write_videofile(output_path, codec="libx264", threads=4, logger="bar")
     clip.close()
     print(f"\nDone! Output: {output_path}")
-    print(f"Duration: {len(frames)/fps:.1f} seconds ({len(frames)} frames @ {fps}fps)")
+    print(f"Duration: {len(frame_paths)/fps:.1f} seconds ({len(frame_paths)} frames @ {fps}fps)")
 
 
 # ── Main ─────────────────────────────────────────────
@@ -224,12 +222,16 @@ def main():
     # 5. Summary and confirm
     display_summary_and_confirm(base_dir, selected_folders, files, output_path, fps)
 
-    # 6. Build frames with overlay
+    # 6. Build frames with overlay (streamed to a temp dir to avoid OOM on 4K frames)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    frames = build_frames(files, font)
+    temp_dir = tempfile.mkdtemp(prefix="timelapse_frames_", dir=base_dir)
+    try:
+        frame_paths = build_frames(files, font, temp_dir)
 
-    # 7. Encode video
-    encode_video(frames, output_path, fps)
+        # 7. Encode video
+        encode_video(frame_paths, output_path, fps)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
